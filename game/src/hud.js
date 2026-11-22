@@ -1,153 +1,148 @@
-// Coral Bay — the HUD: health/armor bars, cash, respect rank, wanted stars,
-// mission objective, speedometer, radio readout, toasts, and the minimap.
-(function () {
-  'use strict';
-  var CB = window.CB;
+// Coral Bay — everything drawn on top of the 3D view.
+// One job: the HUD (health, money, wanted stars, speed, objective, toasts),
+// the minimap, and the menus (start, pause, busted, all-done).
 
-  function $(id) { return document.getElementById(id); }
-
-  function HUD() {
-    this.mm = $('minimap').getContext('2d');
-    this._toastT = 0;
-    this._bannerT = 0;
+class HUD {
+  constructor(callbacks) {
+    this.cb = callbacks;   // {onStart, onResume, onRestart, onMute}
+    this.el = {};
+    for (const id of ['hud', 'health-fill', 'money', 'stars', 'speed', 'speed-val',
+      'objective', 'objective-text', 'timer', 'toast', 'minimap',
+      'menu', 'menu-title', 'menu-body', 'menu-btn', 'menu-btn2',
+      'hint', 'busted', 'mission-done']) {
+      this.el[id] = document.getElementById(id);
+    }
+    this.toastTimer = null;
+    this.el['menu-btn'].addEventListener('click', () => this.cb.onStart());
+    this.el['menu-btn2'].addEventListener('click', () => this.cb.onRestart());
+    this.mapCtx = this.el['minimap'].getContext('2d');
   }
 
-  HUD.prototype.rankName = function (completed) {
-    var name = 'ROOKIE';
-    CB.RANKS.forEach(function (r) { if (completed >= r.at) name = r.name; });
-    return name;
-  };
+  showStart(save) {
+    this.el['hud'].style.display = 'none';
+    this.el['menu'].style.display = 'flex';
+    this.el['menu-title'].textContent = 'CORAL BAY';
+    this.el['menu-body'].innerHTML =
+      '<p>' + STORY.intro + '</p>' +
+      '<p><b>Controls:</b> WASD move &middot; mouse drag camera &middot; Shift sprint &middot; Space jump<br>' +
+      'E enter / exit car &middot; F or click punch &middot; Esc pause &middot; M mute</p>' +
+      '<p><b>8 story missions</b> &middot; steal cars &middot; outrun the Coral Bay PD &middot; ' +
+      'earn ' + fmtMoney(MISSIONS.reduce((a, m) => a + m.reward, 0)) + ' in total.</p>' +
+      (save ? '<p>Save found: ' + fmtMoney(save.money) + ' &middot; mission ' + (save.mission + 1) + '/8. Continue keeps it.</p>' : '');
+    this.el['menu-btn'].textContent = save ? 'Continue' : 'Start the story';
+    this.el['menu-btn2'].style.display = save ? 'inline-block' : 'none';
+    this.el['menu-btn2'].textContent = 'New game';
+  }
 
-  HUD.prototype.update = function (game, dt) {
-    var p = game.player;
-    $('health-fill').style.width = Math.max(0, p.health) + '%';
-    $('armor-fill').style.width = Math.max(0, p.armor) + '%';
-    $('money').textContent = '$' + p.money.toLocaleString('en-US');
-    $('respect').textContent = this.rankName(game.missions.completed) + ' · RESPECT ' + game.missions.completed;
-    // wanted stars
-    var w = game.wanted.stars;
-    var stars = '';
-    for (var i = 0; i < 5; i++) stars += i < w ? '★' : '<span class="dim">★</span>';
-    var wel = $('wanted');
-    wel.innerHTML = stars;
-    wel.classList.toggle('hot', w >= 3);
-    // weapon + speedo
-    var wpn = p.weapon();
-    $('weapon-name').textContent = wpn.name;
-    $('weapon-ammo').textContent = wpn.id === 'fists' ? '' : '· ' + (p.ammo[game.player.weaponIndex] === Infinity ? '∞' : p.ammo[game.player.weaponIndex]);
-    var inCar = !!p.inCar;
-    $('speedo').classList.toggle('hidden', !inCar);
-    $('crosshair').classList.toggle('hidden', inCar || wpn.id === 'fists' || game.state !== 'playing');
-    if (inCar) {
-      $('speed-num').textContent = Math.round(Math.abs(p.inCar.speed) * 2.2);
-      $('car-name').textContent = p.inCar.def.name + (p.inCar.health < 50 ? ' — SMOKING' : '');
+  showPause() {
+    this.el['menu'].style.display = 'flex';
+    this.el['menu-title'].textContent = 'PAUSED';
+    this.el['menu-body'].innerHTML = '<p>Coral Bay waits for no one. Well — right now it does.</p>';
+    this.el['menu-btn'].textContent = 'Resume';
+    this.el['menu-btn2'].style.display = 'inline-block';
+    this.el['menu-btn2'].textContent = 'Restart';
+  }
+
+  showBusted() {
+    this.el['menu'].style.display = 'flex';
+    this.el['menu-title'].textContent = 'BUSTED';
+    this.el['menu-body'].innerHTML =
+      '<p>The Coral Bay PD caught you. They took ' + fmtMoney(200) + ' in fines and dropped you at the station.</p>';
+    this.el['menu-btn'].textContent = 'Get back out there';
+    this.el['menu-btn2'].style.display = 'none';
+  }
+
+  showAllDone() {
+    this.el['menu'].style.display = 'flex';
+    this.el['menu-title'].textContent = 'KING OF CORAL BAY';
+    this.el['menu-body'].innerHTML =
+      '<p>All 8 missions complete. Mara says the city is yours now, Rook. Free roam — cause trouble, lose the cops, enjoy the sunset.</p>';
+    this.el['menu-btn'].textContent = 'Keep playing';
+    this.el['menu-btn2'].style.display = 'none';
+  }
+
+  hideMenu() { this.el['menu'].style.display = 'none'; this.el['hud'].style.display = 'block'; }
+
+  setHealth(h) {
+    this.el['health-fill'].style.width = clamp(h, 0, 100) + '%';
+    this.el['health-fill'].style.background = h > 50 ? '#2ecc71' : (h > 25 ? '#f39c12' : '#e74c3c');
+  }
+
+  setMoney(m) { this.el['money'].textContent = fmtMoney(m); }
+
+  setStars(n) {
+    let s = '';
+    for (let i = 0; i < CONFIG.WANTED_MAX; i++) s += i < n ? '★' : '☆';
+    this.el['stars'].textContent = s;
+    this.el['stars'].style.color = n > 0 ? '#ffdd33' : 'rgba(255,255,255,0.35)';
+  }
+
+  setSpeed(kmh, driving) {
+    this.el['speed'].style.display = driving ? 'block' : 'none';
+    if (driving) this.el['speed-val'].textContent = Math.round(kmh);
+  }
+
+  setObjective(text) { this.el['objective-text'].textContent = text; }
+  setTimer(seconds) {
+    if (seconds > 0) { this.el['timer'].style.display = 'block'; this.el['timer'].textContent = fmtTime(seconds); }
+    else this.el['timer'].style.display = 'none';
+  }
+
+  setHint(text) { this.el['hint'].textContent = text || ''; }
+
+  toast(text, ms) {
+    this.el['toast'].textContent = text;
+    this.el['toast'].style.opacity = '1';
+    clearTimeout(this.toastTimer);
+    this.toastTimer = setTimeout(() => { this.el['toast'].style.opacity = '0'; }, ms || 3500);
+  }
+
+  // Top-down minimap: roads, beach, player arrow, mission marker, police.
+  drawMinimap(player, markerPos, policeUnits, cars) {
+    const ctx = this.mapCtx;
+    const W = 170, H = 170;
+    const scale = W / 340;   // world -170..170 maps to the canvas
+    const px = (x) => (x + 170) * scale;
+    const pz = (z) => (z + 170) * scale;
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = 'rgba(20, 30, 40, 0.85)';
+    ctx.fillRect(0, 0, W, H);
+    // Beach + ocean.
+    ctx.fillStyle = '#e8d29a';
+    ctx.fillRect(0, pz(CONFIG.BEACH_Z), W, H - pz(CONFIG.BEACH_Z));
+    ctx.fillStyle = '#2e7fa8';
+    ctx.fillRect(0, pz(CONFIG.OCEAN_Z), W, H - pz(CONFIG.OCEAN_Z));
+    // Roads.
+    ctx.strokeStyle = '#5a6068';
+    ctx.lineWidth = 5;
+    for (const at of CONFIG.STREETS) {
+      ctx.beginPath(); ctx.moveTo(px(at), 0); ctx.lineTo(px(at), H); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, pz(at)); ctx.lineTo(W, pz(at)); ctx.stroke();
     }
-    $('radio-box').textContent = game.audio.radioOn ? '♪ ' + game.audio.stations[game.audio.station].name : '♪ RADIO OFF';
-    // toast fade
-    if (this._toastT > 0) {
-      this._toastT -= dt;
-      if (this._toastT <= 0) $('toast').textContent = '';
+    // Mission marker.
+    if (markerPos) {
+      ctx.fillStyle = '#22aaff';
+      ctx.beginPath(); ctx.arc(px(markerPos.x), pz(markerPos.z), 6, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(px(markerPos.x), pz(markerPos.z), 8, 0, Math.PI * 2); ctx.stroke();
     }
-    if (this._bannerT > 0) {
-      this._bannerT -= dt;
-      if (this._bannerT <= 0) $('banner').classList.add('hidden');
+    // Police blips (red/blue).
+    for (const u of policeUnits) {
+      ctx.fillStyle = '#ff3344';
+      ctx.beginPath(); ctx.arc(px(u.x), pz(u.z), 4, 0, Math.PI * 2); ctx.fill();
     }
-    this.drawMinimap(game);
-  };
-
-  HUD.prototype.toast = function (text, secs) {
-    $('toast').textContent = text;
-    this._toastT = secs || 3;
-  };
-
-  HUD.prototype.banner = function (title, sub, secs) {
-    $('banner-title').textContent = title;
-    $('banner-sub').textContent = sub || '';
-    $('banner').classList.remove('hidden');
-    this._bannerT = secs || 3;
-  };
-
-  HUD.prototype.setObjective = function (title, text, dist) {
-    $('objective-title').textContent = title;
-    $('objective-text').textContent = text;
-    $('objective-dist').textContent = dist || '';
-  };
-
-  HUD.prototype.setHint = function (text) { $('hint').textContent = text || ''; };
-
-  // Minimap: circular top-down view, roads + buildings + blips, player arrow.
-  HUD.prototype.drawMinimap = function (game) {
-    var g = this.mm, S = 190, C = S / 2;
-    var scale = S / 320; // show 320 world units across
-    var px = game.playerPos().x, pz = game.playerPos().z;
-    function toX(x) { return C + (x - px) * scale; }
-    function toZ(z) { return C + (z - pz) * scale; }
-    g.clearRect(0, 0, S, S);
-    g.save();
-    g.beginPath(); g.arc(C, C, C - 2, 0, Math.PI * 2); g.clip();
-    // sea / land
-    g.fillStyle = '#1f7fa8'; g.fillRect(0, 0, S, S);
-    g.fillStyle = '#3a4a3a'; g.fillRect(0, 0, S, S);
-    // blocks
-    g.fillStyle = '#5a636b';
-    for (var bx = -600; bx < 600; bx += 120) {
-      for (var bz = -600; bz < 600; bz += 120) {
-        var x = toX(bx), z = toZ(bz), w = 120 * scale;
-        if (x + w < 0 || x > S || z + w < 0 || z > S) continue;
-        g.fillRect(x, z, w, w);
-      }
-    }
-    // roads
-    g.strokeStyle = '#2e3138'; g.lineWidth = 18 * scale;
-    for (var s = -600; s <= 600; s += 120) {
-      g.beginPath(); g.moveTo(toX(s), toZ(-700)); g.lineTo(toX(s), toZ(700)); g.stroke();
-      g.beginPath(); g.moveTo(toX(-700), toZ(s)); g.lineTo(toX(700), toZ(s)); g.stroke();
-    }
-    // beach
-    g.fillStyle = '#e8d5a2';
-    g.fillRect(0, toZ(560), S, S - toZ(560));
-    // districts
-    var dots = [
-      { p: CB.SAFEHOUSE_POS, c: '#3fa9f5' },
-      { p: CB.SHOP_POS, c: '#37d67a' },
-      { p: CB.GARAGE_POS, c: '#ff7a1a' },
-    ];
-    dots.forEach(function (d) {
-      g.fillStyle = d.c;
-      g.beginPath(); g.arc(toX(d.p[0]), toZ(d.p[2]), 4, 0, Math.PI * 2); g.fill();
-    });
-    // mission marker
-    if (game.world.marker && game.world.marker.visible) {
-      var mx = toX(game.world.marker.position.x), mz = toZ(game.world.marker.position.z);
-      g.fillStyle = '#ffd23e';
-      g.beginPath(); g.arc(mx, mz, 6, 0, Math.PI * 2); g.fill();
-      g.strokeStyle = '#fff'; g.lineWidth = 2;
-      g.beginPath(); g.arc(mx, mz, 9, 0, Math.PI * 2); g.stroke();
-    }
-    // pickups
-    g.fillStyle = '#7dff9b';
-    game.world.pickupMeshes.forEach(function (pk) {
-      if (pk.taken) return;
-      g.fillRect(toX(pk.mesh.position.x) - 2, toZ(pk.mesh.position.z) - 2, 4, 4);
-    });
-    // police blips
-    g.fillStyle = '#ff5340';
-    game.police.cars.forEach(function (v) {
-      g.beginPath(); g.arc(toX(v.mesh.position.x), toZ(v.mesh.position.z), 3.5, 0, Math.PI * 2); g.fill();
-    });
-    // player arrow (points along camera yaw)
-    g.save();
-    g.translate(C, C);
-    g.rotate(Math.PI - game.player.camYaw);
-    g.fillStyle = '#fff';
-    g.beginPath(); g.moveTo(0, -9); g.lineTo(6, 7); g.lineTo(-6, 7); g.closePath(); g.fill();
-    g.strokeStyle = '#0b1620'; g.lineWidth = 1.5; g.stroke();
-    g.restore();
-    g.restore();
-    // north tick
-    g.fillStyle = '#fff'; g.font = 'bold 11px Arial'; g.textAlign = 'center';
-    g.fillText('N', C, 14);
-  };
-
-  CB.HUD = HUD;
-})();
+    // Player arrow.
+    const heading = player.inCar ? player.inCar.heading : player.heading;
+    ctx.save();
+    ctx.translate(px(player.pos.x), pz(player.pos.z));
+    ctx.rotate(-heading + Math.PI);
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.moveTo(0, -8); ctx.lineTo(5, 6); ctx.lineTo(-5, 6); ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+    ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(1, 1, W - 2, H - 2);
+  }
+}

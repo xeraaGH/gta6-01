@@ -1,253 +1,179 @@
-// Coral Bay — Rae Delgado on foot: movement, camera-relative controls, the
-// weapon set, shooting, and the enemy gunmen used by combat missions.
-(function () {
-  'use strict';
-  var CB = window.CB;
+// Coral Bay — you, on foot.
+// One job: the player character, third-person movement, the follow camera,
+// getting in and out of cars, and fighting.
 
-  function buildHumanoid(shirt, pants, skin) {
-    var g = new THREE.Group();
-    var shirtMat = new THREE.MeshLambertMaterial({ color: shirt });
-    var pantsMat = new THREE.MeshLambertMaterial({ color: pants });
-    var skinMat = new THREE.MeshLambertMaterial({ color: skin });
-    var torso = new THREE.Mesh(new THREE.BoxGeometry(0.85, 1.0, 0.45), shirtMat);
-    torso.position.y = 1.25;
-    g.add(torso);
-    var head = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), skinMat);
-    head.position.y = 2.0;
-    g.add(head);
-    var cap = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.16, 0.56), new THREE.MeshLambertMaterial({ color: 0x222222 }));
-    cap.position.y = 2.28;
-    g.add(cap);
-    var armL = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.9, 0.22), shirtMat);
-    armL.position.set(-0.55, 1.3, 0);
-    g.add(armL);
-    var armR = armL.clone();
-    armR.position.x = 0.55;
-    g.add(armR);
-    var legL = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.9, 0.3), pantsMat);
-    legL.position.set(-0.22, 0.45, 0);
-    g.add(legL);
-    var legR = legL.clone();
-    legR.position.x = 0.22;
-    g.add(legR);
-    g.userData.armL = armL; g.userData.armR = armR;
-    g.userData.legL = legL; g.userData.legR = legR;
-    return g;
-  }
+function makePlayerMesh() {
+  const g = new THREE.Group();
+  const jacket = new THREE.MeshLambertMaterial({ color: 0x2e86c1 });
+  const skin = new THREE.MeshLambertMaterial({ color: 0xe8b88a });
+  const jeans = new THREE.MeshLambertMaterial({ color: 0x1f2d3d });
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.38, 1.0, 10), jacket);
+  body.position.y = 1.15;
+  g.add(body);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.28, 12, 10), skin);
+  head.position.y = 1.9;
+  g.add(head);
+  // A cap, so Rook reads at a distance.
+  const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.12, 12),
+    new THREE.MeshLambertMaterial({ color: 0xc0392b }));
+  cap.position.y = 2.1;
+  g.add(cap);
+  const legL = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.7, 0.2), jeans);
+  legL.position.set(-0.16, 0.35, 0);
+  g.add(legL);
+  const legR = legL.clone();
+  legR.position.x = 0.16;
+  g.add(legR);
+  const armL = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.7, 0.16), jacket);
+  armL.position.set(-0.48, 1.15, 0);
+  g.add(armL);
+  const armR = armL.clone();
+  armR.position.x = 0.48;
+  g.add(armR);
+  g.userData.legL = legL; g.userData.legR = legR;
+  g.userData.armL = armL; g.userData.armR = armR;
+  return g;
+}
 
-  function Player(scene, world) {
+class Player {
+  constructor(scene, world, audio) {
     this.scene = scene;
     this.world = world;
-    // Rae Delgado: teal jacket, dark jeans.
-    this.mesh = buildHumanoid(0x2a9d8f, 0x2a2f3a, 0xc98a5e);
-    this.mesh.position.set(-60, 0, -40);
+    this.audio = audio;
+    this.mesh = makePlayerMesh();
     scene.add(this.mesh);
-    this.pos = this.mesh.position;
-    this.yaw = 0;          // facing
-    this.camYaw = 0; this.camPitch = 0.32;
-    this.camDist = 7;
-    this.health = 100;
-    this.armor = 0;
+    this.pos = new THREE.Vector3(0, 0, 28);
+    this.velY = 0;
+    this.heading = Math.PI;      // facing the plaza
+    this.camYaw = Math.PI;
+    this.camPitch = 0.32;
+    this.camDist = 9;
+    this.health = CONFIG.PLAYER_HEALTH;
     this.money = 0;
-    this.weaponIndex = 0;
-    this.ammo = [Infinity, 48, 120, 0];
-    this.hasShotgun = false;
-    this.inCar = null;
-    this.speed = 0;
-    this.vy = 0;
+    this.inCar = null;           // the Car being driven, or null
     this.onGround = true;
-    this._shootT = 0;
-    this._walkPhase = 0;
-    this._hurtT = 0;
-    this.alive = true;
+    this.walkPhase = 0;
+    this.attackCooldown = 0;
+    this.hurtFlash = 0;
+    this.mesh.position.copy(this.pos);
+    this.mesh.rotation.y = this.heading;
   }
 
-  Player.prototype.weapon = function () { return CB.WEAPONS[this.weaponIndex]; };
+  // Camera-relative movement: W runs away from the camera.
+  update(dt, input, camera) {
+    this.attackCooldown = Math.max(0, this.attackCooldown - dt);
+    this.hurtFlash = Math.max(0, this.hurtFlash - dt);
 
-  Player.prototype.selectWeapon = function (i) {
-    if (i === 3 && !this.hasShotgun) return false;
-    this.weaponIndex = i;
-    return true;
-  };
-
-  Player.prototype.moveSpeed = function () { return 7.5; };
-
-  Player.prototype.updateOnFoot = function (dt, input) {
-    if (!this.alive) return;
-    this._shootT -= dt;
-    this._hurtT -= dt;
-    var sprint = input.sprint ? 1.55 : 1;
-    var fwd = (input.forward ? 1 : 0) - (input.back ? 1 : 0);
-    var strafe = (input.right ? 1 : 0) - (input.left ? 1 : 0);
-    var len = Math.sqrt(fwd * fwd + strafe * strafe) || 1;
-    fwd /= len; strafe /= len;
-    // camera-relative movement
-    var cy = this.camYaw;
-    var mx = (Math.sin(cy) * -fwd + Math.cos(cy) * strafe);
-    var mz = (Math.cos(cy) * -fwd + -Math.sin(cy) * strafe);
-    var spd = this.moveSpeed() * sprint;
-    var nx = this.pos.x + mx * spd * dt * (fwd || strafe ? 1 : 0);
-    var nz = this.pos.z + mz * spd * dt * (fwd || strafe ? 1 : 0);
-    var fixed = this.world.collide(nx, nz, 0.6);
-    this.pos.x = fixed.x; this.pos.z = fixed.z;
-    if (fwd || strafe) {
-      this.yaw = Math.atan2(mx, mz);
-      this._walkPhase += dt * spd * 1.6;
+    if (this.inCar) {
+      // Driving: the car does the moving; the camera chases the car.
+      const car = this.inCar;
+      const throttle = (input.up ? 1 : 0) + (input.down ? -1 : 0);
+      const steer = (input.left ? -1 : 0) + (input.right ? 1 : 0);
+      car.drive(dt, throttle, steer);
+      this.pos.copy(car.pos);
+      this.camYaw = angleLerp(this.camYaw, car.heading + Math.PI, Math.min(1, dt * 3));
+      this.audio.engine(Math.abs(car.speed) / CONFIG.CAR_MAX_SPEED, true);
+      this.updateCamera(dt, camera, car.pos);
+      return;
     }
-    // jump / gravity
-    if (input.jump && this.onGround) { this.vy = 7; this.onGround = false; }
-    this.vy -= 22 * dt;
-    this.pos.y += this.vy * dt;
-    if (this.pos.y <= 0) { this.pos.y = 0; this.vy = 0; this.onGround = true; }
-    this.mesh.rotation.y = this.yaw;
-    // walk animation
-    var sw = (fwd || strafe) ? Math.sin(this._walkPhase) * 0.6 : 0;
-    this.mesh.userData.legL.rotation.x = sw;
-    this.mesh.userData.legR.rotation.x = -sw;
-    this.mesh.userData.armL.rotation.x = -sw * 0.7;
-    this.mesh.userData.armR.rotation.x = sw * 0.7;
-    // aim arms forward when armed
-    if (this.weaponIndex > 0) {
-      this.mesh.userData.armR.rotation.x = -1.3;
-      this.mesh.userData.armL.rotation.x = -1.1;
+    this.audio.engine(0, false);
+
+    // On foot.
+    const sprint = input.sprint ? CONFIG.SPRINT_SPEED : CONFIG.WALK_SPEED;
+    let mx = 0, mz = 0;
+    if (input.up) { mx -= Math.sin(this.camYaw); mz -= Math.cos(this.camYaw); }
+    if (input.down) { mx += Math.sin(this.camYaw); mz += Math.cos(this.camYaw); }
+    if (input.left) { mx -= Math.cos(this.camYaw); mz += Math.sin(this.camYaw); }
+    if (input.right) { mx += Math.cos(this.camYaw); mz -= Math.sin(this.camYaw); }
+    const len = Math.hypot(mx, mz);
+    if (len > 0) {
+      mx /= len; mz /= len;
+      this.heading = angleLerp(this.heading, Math.atan2(mx, mz), Math.min(1, dt * 10));
+      this.pos.x += mx * sprint * dt;
+      this.pos.z += mz * sprint * dt;
+      this.walkPhase += dt * sprint * 1.6;
     }
-  };
+    // Jump and gravity.
+    if (input.jump && this.onGround) { this.velY = CONFIG.JUMP_VELOCITY; this.onGround = false; }
+    this.velY -= CONFIG.GRAVITY * dt;
+    this.pos.y += this.velY * dt;
+    if (this.pos.y <= 0) { this.pos.y = 0; this.velY = 0; this.onGround = true; }
+    const fixed = this.world.resolveCollision(this.pos.x, this.pos.z, 0.5);
+    this.pos.x = fixed[0]; this.pos.z = fixed[1];
+    this.pos.x = clamp(this.pos.x, -150, 150);
+    this.pos.z = clamp(this.pos.z, -150, 205);
+    this.mesh.position.copy(this.pos);
+    this.mesh.rotation.y = this.heading;
+    // Walk-cycle limbs.
+    const swing = len > 0 ? Math.sin(this.walkPhase) * 0.6 : 0;
+    this.mesh.userData.legL.rotation.x = swing;
+    this.mesh.userData.legR.rotation.x = -swing;
+    this.mesh.userData.armL.rotation.x = -swing * 0.7;
+    this.mesh.userData.armR.rotation.x = swing * 0.7;
+    this.updateCamera(dt, camera, this.pos);
+  }
 
-  Player.prototype.takeDamage = function (amount) {
-    if (!this.alive) return;
-    var absorbed = Math.min(this.armor, amount * 0.6);
-    this.armor -= absorbed;
-    this.health -= (amount - absorbed);
-    this._hurtT = 0.4;
-    if (this.health <= 0) { this.health = 0; this.alive = false; }
-  };
+  updateCamera(dt, camera, focus) {
+    // Orbit with the mouse (camYaw/camPitch are changed by mouse drag),
+    // smoothed so the camera never snaps.
+    const cx = focus.x + Math.sin(this.camYaw) * Math.cos(this.camPitch) * this.camDist;
+    const cz = focus.z + Math.cos(this.camYaw) * Math.cos(this.camPitch) * this.camDist;
+    const cy = focus.y + 2 + Math.sin(this.camPitch) * this.camDist;
+    camera.position.lerp(new THREE.Vector3(cx, cy, cz), Math.min(1, dt * 8));
+    camera.lookAt(focus.x, focus.y + 1.6, focus.z);
+  }
 
-  Player.prototype.heal = function (amount) {
-    this.health = Math.min(100, this.health + amount);
-  };
+  enterCar(car) {
+    this.inCar = car;
+    car.kind = 'player';
+    this.mesh.visible = false;
+    this.audio.pickup();
+  }
 
-  // Shoot toward the camera aim point. Returns true if a shot was fired.
-  Player.prototype.shoot = function (enemies, audio, onHit) {
-    if (!this.alive || this.inCar) return false;
-    if (this._shootT > 0) return false;
-    var w = this.weapon();
-    if (w.id !== 'fists' && this.ammo[this.weaponIndex] <= 0) {
-      this._shootT = 0.3;
-      return false; // click — empty
-    }
-    this._shootT = w.rate;
-    if (w.id !== 'fists') this.ammo[this.weaponIndex]--;
-    if (audio) audio.shoot(w.id);
-    // aim: from camera through screen centre
-    var origin = this.pos.clone(); origin.y += 1.6;
-    var dir = new THREE.Vector3();
-    // forward from camera yaw/pitch
-    dir.set(-Math.sin(this.camYaw) * Math.cos(this.camPitch), Math.sin(this.camPitch), -Math.cos(this.camYaw) * Math.cos(this.camPitch));
-    dir.normalize();
-    var pellets = w.pellets || 1;
-    for (var p = 0; p < pellets; p++) {
-      var d = dir.clone();
-      d.x += (Math.random() - 0.5) * w.spread * 2;
-      d.y += (Math.random() - 0.5) * w.spread * 2;
-      d.z += (Math.random() - 0.5) * w.spread * 2;
-      d.normalize();
-      if (w.id === 'fists') {
-        // melee: hit the nearest enemy in front within range
-        var best = null, bestD = w.range;
-        enemies.forEach(function (e) {
-          if (e.dead) return;
-          var dx = e.mesh.position.x - origin.x, dz = e.mesh.position.z - origin.z;
-          var dist = Math.sqrt(dx * dx + dz * dz);
-          if (dist < bestD) {
-            var dot = (dx * d.x + dz * d.z) / (dist || 1);
-            if (dot > 0.5) { best = e; bestD = dist; }
-          }
-        });
-        if (best) onHit(best, w.damage);
-        continue;
+  exitCar() {
+    if (!this.inCar) return;
+    const car = this.inCar;
+    this.inCar = null;
+    car.kind = 'parked';
+    // Step out to the driver's side.
+    const side = car.heading + Math.PI / 2;
+    this.pos.set(car.pos.x + Math.sin(side) * 2.2, 0, car.pos.z + Math.cos(side) * 2.2);
+    const fixed = this.world.resolveCollision(this.pos.x, this.pos.z, 0.5);
+    this.pos.x = fixed[0]; this.pos.z = fixed[1];
+    this.mesh.visible = true;
+    this.mesh.position.copy(this.pos);
+  }
+
+  // A punch: short range, hurts a pedestrian or a police officer nearby.
+  // Returns the thing hit, or null.
+  attack(peds, officers) {
+    if (this.attackCooldown > 0 || this.inCar) return null;
+    this.attackCooldown = 0.45;
+    this.audio.punch();
+    const fx = Math.sin(this.heading), fz = Math.cos(this.heading);
+    const reach = 2.2;
+    for (const p of peds) {
+      const dx = p.pos.x - this.pos.x, dz = p.pos.z - this.pos.z;
+      if (Math.hypot(dx, dz) < reach && dx * fx + dz * fz > 0) {
+        p.fleeing = true; p.fleeTimer = 4;
+        return { type: 'ped', target: p };
       }
-      // hitscan against enemies
-      var hit = null, hitD = w.range;
-      enemies.forEach(function (e) {
-        if (e.dead) return;
-        var to = new THREE.Vector3(e.mesh.position.x - origin.x, (e.mesh.position.y + 1.2) - origin.y, e.mesh.position.z - origin.z);
-        var along = to.dot(d);
-        if (along < 0 || along > hitD) return;
-        var perp = to.clone().addScaledVector(d, -along).length();
-        if (perp < 1.1) { hit = e; hitD = along; }
-      });
-      if (hit) onHit(hit, w.damage);
-      if (this._tracer) this._tracer(origin, d, Math.min(hitD, w.range));
     }
-    return true;
-  };
-
-  // ---- Enemies ----
-  function Enemy(scene, x, z, boss) {
-    this.scene = scene;
-    this.mesh = buildHumanoid(boss ? 0x8a1f2d : 0x5a3a6a, 0x333333, 0xb98a62);
-    this.mesh.position.set(x, 0, z);
-    if (boss) this.mesh.scale.set(1.15, 1.15, 1.15);
-    scene.add(this.mesh);
-    this.health = boss ? 220 : 80;
-    this.boss = !!boss;
-    this.dead = false;
-    this._shootT = 1 + Math.random();
-    this._moveT = 0;
-    this._strafeDir = Math.random() < 0.5 ? 1 : -1;
-    this._flashT = 0;
+    for (const o of officers) {
+      const dx = o.pos.x - this.pos.x, dz = o.pos.z - this.pos.z;
+      if (Math.hypot(dx, dz) < reach && dx * fx + dz * fz > 0) {
+        o.health -= 34;
+        return { type: 'officer', target: o };
+      }
+    }
+    return null;
   }
 
-  Enemy.prototype.update = function (dt, playerPos, player, audio, onPlayerHit) {
-    if (this.dead) return;
-    this._shootT -= dt;
-    this._moveT -= dt;
-    this._flashT -= dt;
-    var dx = playerPos.x - this.mesh.position.x, dz = playerPos.z - this.mesh.position.z;
-    var d = Math.sqrt(dx * dx + dz * dz);
-    var want = 14;
-    if (d > want + 6) { // advance
-      this.mesh.position.x += (dx / d) * 4.5 * dt;
-      this.mesh.position.z += (dz / d) * 4.5 * dt;
-    } else if (d < want - 6) { // back off
-      this.mesh.position.x -= (dx / d) * 3 * dt;
-      this.mesh.position.z -= (dz / d) * 3 * dt;
-    } else if (this._moveT <= 0) { // strafe
-      this._moveT = 1.2 + Math.random();
-      this._strafeDir *= -1;
-    }
-    if (this._moveT > 0) {
-      this.mesh.position.x += (-dz / (d || 1)) * this._strafeDir * 2.5 * dt;
-      this.mesh.position.z += (dx / (d || 1)) * this._strafeDir * 2.5 * dt;
-    }
-    this.mesh.rotation.y = Math.atan2(dx, dz);
-    // walk anim
-    var sw = Math.sin(performance.now() / 130) * 0.5;
-    this.mesh.userData.legL.rotation.x = sw;
-    this.mesh.userData.legR.rotation.x = -sw;
-    this.mesh.userData.armR.rotation.x = -1.3;
-    // shoot at the player
-    if (d < 55 && this._shootT <= 0 && player.alive) {
-      this._shootT = this.boss ? 0.9 : 1.4 + Math.random() * 0.8;
-      if (audio) audio.enemyShoot();
-      var hitChance = d < 18 ? 0.42 : d < 35 ? 0.25 : 0.12;
-      if (Math.random() < hitChance) onPlayerHit(this.boss ? 14 : 9);
-    }
-  };
+  hurt(amount) {
+    this.health = Math.max(0, this.health - amount);
+    this.hurtFlash = 0.4;
+  }
 
-  Enemy.prototype.damage = function (amount) {
-    this.health -= amount;
-    this._flashT = 0.12;
-    if (this.health <= 0) {
-      this.dead = true;
-      this.mesh.rotation.x = -Math.PI / 2; // fall over
-      this.mesh.position.y = 0.4;
-    }
-  };
-
-  Enemy.prototype.remove = function () { this.scene.remove(this.mesh); };
-
-  CB.Player = Player;
-  CB.Enemy = Enemy;
-  CB.buildHumanoid = buildHumanoid;
-})();
+  heal(amount) { this.health = Math.min(CONFIG.PLAYER_HEALTH, this.health + amount); }
+  speed() { return this.inCar ? Math.abs(this.inCar.speed) : 0; }
+}
