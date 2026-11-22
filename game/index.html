@@ -1,210 +1,101 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>CORAL BAY — Open-World Crime</title>
+<title>Coral Bay — an open-world crime game</title>
 <style>
-  html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #0b1620; font-family: "Segoe UI", Arial, sans-serif; }
-  #game-canvas { position: fixed; inset: 0; display: block; }
-  .hidden { display: none !important; }
-  /* ---------- HUD ---------- */
-  #hud { position: fixed; inset: 0; pointer-events: none; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.8); z-index: 5; }
-  #hud-top-left { position: absolute; top: 14px; left: 14px; }
-  .bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
-  .bar-label { font-size: 11px; font-weight: 700; letter-spacing: 1px; width: 52px; }
-  .bar { width: 190px; height: 12px; background: rgba(0,0,0,.55); border: 1px solid rgba(255,255,255,.35); border-radius: 6px; overflow: hidden; }
-  .bar > div { height: 100%; }
-  #health-fill { background: linear-gradient(90deg, #37d67a, #7cf29b); width: 100%; }
-  #armor-fill { background: linear-gradient(90deg, #3fa9f5, #8fd0ff); width: 0%; }
-  #money { font-size: 22px; font-weight: 800; color: #7dff9b; margin-top: 2px; }
-  #respect { font-size: 12px; font-weight: 700; color: #ffd76a; letter-spacing: 1px; }
-  #wanted { position: absolute; top: 12px; right: 16px; font-size: 30px; letter-spacing: 4px; color: #ffd23e; }
-  #wanted .dim { color: rgba(255,255,255,.25); }
-  #wanted.hot { color: #ff5340; animation: blink .5s steps(2) infinite; }
-  @keyframes blink { 50% { opacity: .45; } }
-  #objective { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); text-align: center; max-width: 560px; }
-  #objective-title { font-size: 15px; font-weight: 800; letter-spacing: 1px; color: #ffe9a8; }
-  #objective-text { font-size: 13px; color: #fff; }
-  #objective-dist { font-size: 12px; color: #9fe8ff; font-weight: 700; }
-  #minimap-wrap { position: absolute; left: 14px; bottom: 14px; border: 2px solid rgba(255,255,255,.45); border-radius: 50%; overflow: hidden; background: #0d1b26; box-shadow: 0 2px 10px rgba(0,0,0,.5); }
-  #minimap { display: block; }
-  #speedo { position: absolute; right: 18px; bottom: 16px; text-align: right; }
-  #speed-num { font-size: 34px; font-weight: 800; }
-  #speed-unit { font-size: 12px; color: #cfe8ff; }
-  #car-name { font-size: 13px; font-weight: 700; color: #ffe9a8; }
-  #weapon-box { position: absolute; right: 18px; bottom: 96px; text-align: right; font-size: 14px; font-weight: 700; }
-  #weapon-box .ammo { color: #9fe8ff; }
-  #radio-box { position: absolute; right: 18px; top: 64px; text-align: right; font-size: 12px; font-weight: 700; color: #ffd76a; }
-  #toast { position: absolute; left: 50%; bottom: 150px; transform: translateX(-50%); font-size: 17px; font-weight: 800; color: #ffe9a8; text-align: center; }
-  #crosshair { position: absolute; left: 50%; top: 50%; width: 22px; height: 22px; margin: -11px 0 0 -11px; }
-  #crosshair::before, #crosshair::after { content: ""; position: absolute; background: #fff; box-shadow: 0 0 3px #000; }
-  #crosshair::before { left: 10px; top: 0; width: 2px; height: 22px; }
-  #crosshair::after { left: 0; top: 10px; width: 22px; height: 2px; }
-  #hint { position: absolute; left: 50%; bottom: 24px; transform: translateX(-50%); font-size: 13px; background: rgba(0,0,0,.55); padding: 6px 12px; border-radius: 6px; }
-  #damage-flash { position: fixed; inset: 0; pointer-events: none; background: radial-gradient(ellipse at center, transparent 55%, rgba(255,0,0,.45) 100%); opacity: 0; z-index: 6; }
-  /* ---------- Weapon wheel ---------- */
-  #wheel { position: fixed; left: 50%; top: 50%; width: 300px; height: 300px; margin: -150px 0 0 -150px; z-index: 8; pointer-events: none; }
-  .wheel-slot { position: absolute; width: 120px; height: 52px; left: 90px; top: 124px; background: rgba(0,0,0,.65); border: 2px solid rgba(255,255,255,.35); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 14px; color: #fff; }
-  .wheel-slot.sel { border-color: #ffd23e; background: rgba(255,210,62,.25); }
-  /* ---------- Menus ---------- */
-  .menu { position: fixed; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center; background: linear-gradient(160deg, rgba(6,20,34,.88), rgba(20,8,32,.82)); color: #fff; }
-  .menu-card { width: 640px; max-width: 92vw; text-align: center; }
-  .game-title { font-size: 84px; font-weight: 900; letter-spacing: 6px; line-height: .95; margin: 0; background: linear-gradient(180deg, #ffe9a8, #ff9d5c 55%, #ff5e7a); -webkit-background-clip: text; background-clip: text; color: transparent; text-shadow: 0 4px 30px rgba(255,120,80,.25); }
-  .game-sub { font-size: 17px; letter-spacing: 5px; color: #9fe8ff; margin: 6px 0 4px; font-weight: 700; }
-  .game-tag { font-size: 14px; color: #d8e6f2; margin-bottom: 22px; }
-  .menu-btn { display: block; width: 320px; margin: 10px auto; padding: 13px 0; font-size: 17px; font-weight: 800; letter-spacing: 1px; color: #0b1620; background: linear-gradient(180deg, #ffd23e, #ff9d2e); border: none; border-radius: 8px; cursor: pointer; }
-  .menu-btn:hover { filter: brightness(1.1); }
-  .menu-btn.ghost { background: rgba(255,255,255,.12); color: #fff; border: 1px solid rgba(255,255,255,.4); }
-  .menu-note { font-size: 12px; color: #9fb6c8; margin-top: 16px; line-height: 1.6; }
-  .controls-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 22px; text-align: left; font-size: 13px; margin: 14px auto 4px; width: 460px; max-width: 90vw; }
-  .controls-grid b { color: #ffd76a; }
-  #mission-list { text-align: left; font-size: 14px; margin: 10px auto; width: 480px; max-width: 92vw; }
-  #mission-list .done { color: #7dff9b; }
-  #mission-list .next { color: #ffd76a; font-weight: 700; }
-  #mission-list .locked { color: #7d93a6; }
-  #banner { position: fixed; left: 50%; top: 34%; transform: translate(-50%, -50%); z-index: 9; text-align: center; pointer-events: none; color: #fff; }
-  #banner-title { font-size: 46px; font-weight: 900; letter-spacing: 3px; color: #ffe9a8; text-shadow: 0 2px 14px rgba(0,0,0,.8); }
-  #banner-sub { font-size: 18px; color: #fff; text-shadow: 0 2px 8px rgba(0,0,0,.8); }
-  #shop-panel { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 11; width: 420px; max-width: 92vw; background: rgba(8,18,30,.96); border: 2px solid #ffd23e; border-radius: 12px; padding: 20px; color: #fff; }
-  #shop-panel h2 { margin: 0 0 4px; color: #ffd76a; }
-  .shop-row { display: flex; justify-content: space-between; align-items: center; padding: 9px 0; border-bottom: 1px solid rgba(255,255,255,.15); font-size: 14px; }
-  .shop-row button { padding: 6px 14px; font-weight: 800; border: none; border-radius: 6px; background: #ffd23e; cursor: pointer; }
-  #garage-panel { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 11; width: 420px; max-width: 92vw; background: rgba(8,18,30,.96); border: 2px solid #3fa9f5; border-radius: 12px; padding: 20px; color: #fff; }
-  #garage-panel h2 { margin: 0 0 4px; color: #8fd0ff; }
-  #loading { position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; background: #0b1620; color: #ffd76a; font-size: 20px; font-weight: 800; letter-spacing: 2px; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0b1620;
+    font-family: 'Segoe UI', system-ui, sans-serif; color: #fff; }
+  #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  #status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+  /* HUD */
+  #hud { position: fixed; inset: 0; pointer-events: none; display: none; z-index: 5; }
+  #topbar { position: absolute; top: 14px; left: 16px; right: 16px; display: flex;
+    justify-content: space-between; align-items: flex-start; }
+  #health-wrap { width: 220px; }
+  #health-label { font-size: 12px; letter-spacing: 2px; opacity: 0.85; margin-bottom: 4px; }
+  #health-bar { height: 12px; background: rgba(0,0,0,0.55); border: 1px solid rgba(255,255,255,0.5); border-radius: 6px; overflow: hidden; }
+  #health-fill { height: 100%; width: 100%; background: #2ecc71; }
+  #money { font-size: 26px; font-weight: 700; text-shadow: 0 2px 4px rgba(0,0,0,0.7); }
+  #stars { font-size: 26px; letter-spacing: 4px; color: rgba(255,255,255,0.35);
+    text-shadow: 0 2px 4px rgba(0,0,0,0.7); text-align: right; }
+  #objective { position: absolute; top: 64px; left: 16px; max-width: 430px;
+    background: rgba(0,0,0,0.55); border-left: 4px solid #22aaff; padding: 10px 14px; border-radius: 4px; }
+  #objective-text { font-size: 14px; line-height: 1.45; }
+  #timer { display: none; margin-top: 6px; font-size: 22px; font-weight: 700; color: #ffd75e; }
+  #minimap { position: absolute; right: 16px; bottom: 16px; width: 170px; height: 170px;
+    border: 2px solid rgba(255,255,255,0.6); border-radius: 6px; background: rgba(0,0,0,0.4); }
+  #speed { display: none; position: absolute; right: 200px; bottom: 20px; text-align: right;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.8); }
+  #speed-val { font-size: 44px; font-weight: 800; line-height: 1; }
+  #speed-unit { font-size: 13px; letter-spacing: 2px; opacity: 0.8; }
+  #hint { position: absolute; bottom: 22px; left: 50%; transform: translateX(-50%);
+    font-size: 16px; font-weight: 600; text-shadow: 0 2px 4px rgba(0,0,0,0.9); }
+  #toast { position: absolute; top: 150px; left: 50%; transform: translateX(-50%);
+    background: rgba(0,0,0,0.65); padding: 10px 18px; border-radius: 20px; font-size: 15px;
+    opacity: 0; transition: opacity 0.3s; white-space: nowrap; }
+  #hurt { position: fixed; inset: 0; pointer-events: none; z-index: 6; opacity: 0;
+    background: radial-gradient(ellipse at center, transparent 55%, rgba(255,0,0,0.55) 100%); }
+
+  /* Menus */
+  #menu { position: fixed; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(160deg, rgba(8,40,70,0.92), rgba(10,70,90,0.88)); }
+  #menu-card { max-width: 620px; padding: 36px 44px; text-align: center; }
+  #menu-title { font-size: 64px; font-weight: 900; letter-spacing: 6px; margin: 0 0 4px;
+    background: linear-gradient(90deg, #ffd75e, #ff8c42); -webkit-background-clip: text; background-clip: text; color: transparent;
+    text-shadow: none; }
+  #menu-sub { font-size: 15px; letter-spacing: 4px; opacity: 0.85; margin: 0 0 22px; }
+  #menu-body { font-size: 15px; line-height: 1.6; opacity: 0.95; margin-bottom: 26px; text-align: left; }
+  #menu-body p { margin: 10px 0; }
+  .btn { pointer-events: auto; cursor: pointer; border: none; border-radius: 8px; padding: 14px 30px;
+    font-size: 17px; font-weight: 700; color: #082338; background: #ffd75e; margin: 4px; }
+  .btn:hover { background: #ffe08a; }
+  .btn.ghost { background: transparent; color: #fff; border: 2px solid rgba(255,255,255,0.6); }
 </style>
 </head>
 <body>
-<div id="loading">LOADING CORAL BAY…</div>
-<canvas id="game-canvas"></canvas>
+<canvas id="game" aria-label="Coral Bay: an open-world crime game. Drive, steal cars, run missions and outrun the police."></canvas>
+<p id="status" role="status" aria-live="polite"></p>
+<div id="hurt"></div>
 
-<div id="hud" class="hidden">
-  <div id="hud-top-left">
-    <div class="bar-row"><span class="bar-label">HEALTH</span><div class="bar"><div id="health-fill"></div></div></div>
-    <div class="bar-row"><span class="bar-label">ARMOR</span><div class="bar"><div id="armor-fill"></div></div></div>
-    <div id="money">$0</div>
-    <div id="respect">ROOKIE · RESPECT 0</div>
-  </div>
-  <div id="wanted"></div>
-  <div id="objective"><div id="objective-title"></div><div id="objective-text"></div><div id="objective-dist"></div></div>
-  <div id="radio-box"></div>
-  <div id="minimap-wrap"><canvas id="minimap" width="190" height="190"></canvas></div>
-  <div id="speedo" class="hidden"><div id="speed-num">0</div><div id="speed-unit">MPH</div><div id="car-name"></div></div>
-  <div id="weapon-box"><span id="weapon-name">FISTS</span> <span class="ammo" id="weapon-ammo"></span></div>
-  <div id="crosshair" class="hidden"></div>
-  <div id="toast"></div>
-  <div id="hint"></div>
-</div>
-<div id="damage-flash"></div>
-
-<div id="wheel" class="hidden">
-  <div class="wheel-slot" data-w="0" style="transform: translateY(-118px);">1 · FISTS</div>
-  <div class="wheel-slot" data-w="1" style="transform: translateX(118px);">2 · PISTOL</div>
-  <div class="wheel-slot" data-w="2" style="transform: translateY(118px);">3 · SMG</div>
-  <div class="wheel-slot" data-w="3" style="transform: translateX(-118px);">4 · SHOTGUN</div>
-</div>
-
-<div id="banner" class="hidden"><div id="banner-title"></div><div id="banner-sub"></div></div>
-
-<div id="menu-start" class="menu hidden">
-  <div class="menu-card">
-    <h1 class="game-title">CORAL<br>BAY</h1>
-    <div class="game-sub">AN OPEN-WORLD CRIME STORY</div>
-    <div class="game-tag">Steal cars. Outrun the Coral Bay PD. Take back the city — one job at a time.</div>
-    <button class="menu-btn" id="btn-new">NEW GAME</button>
-    <button class="menu-btn ghost" id="btn-continue">CONTINUE</button>
-    <button class="menu-btn ghost" id="btn-how">HOW TO PLAY</button>
-    <div class="menu-note">A completely original game. Coral Bay, its people and its story are invented —<br>no Rockstar, GTA or other commercial game content. Plays offline, keyboard + mouse.</div>
-  </div>
-</div>
-
-<div id="menu-how" class="menu hidden">
-  <div class="menu-card">
-    <h2 style="color:#ffd76a;letter-spacing:2px;">HOW TO PLAY</h2>
-    <div class="controls-grid">
-      <div><b>W A S D</b> — move / drive</div><div><b>Mouse</b> — look (drag or click to lock)</div>
-      <div><b>Shift</b> — sprint</div><div><b>Space</b> — jump / handbrake</div>
-      <div><b>E</b> — steal / enter / exit car</div><div><b>Click / F</b> — shoot / punch</div>
-      <div><b>1–4 / hold Q</b> — weapons</div><div><b>R</b> — radio station</div>
-      <div><b>M</b> — missions &amp; phone</div><div><b>H</b> — horn</div>
-      <div><b>P / Esc</b> — pause</div><div><b>C</b> — camera view</div>
+<div id="hud">
+  <div id="topbar">
+    <div id="health-wrap">
+      <div id="health-label">HEALTH</div>
+      <div id="health-bar"><div id="health-fill"></div></div>
     </div>
-    <p style="font-size:14px;line-height:1.6;">Follow the gold <b style="color:#ffd76a;">M</b> marker to start the next story job.
-    Crime raises your wanted stars — the Coral Bay PD sends patrol cars, roadblocks and, at 4 stars, the Air One helicopter.
-    Lay low to cool off, or reach the safehouse. Earn cash from jobs, buy guns and armor at the TAC SHOP, tune your ride at the GARAGE.</p>
-    <button class="menu-btn" id="btn-how-back">BACK</button>
+    <div id="money">$0</div>
+    <div id="stars">☆☆☆☆☆</div>
+  </div>
+  <div id="objective"><div id="objective-text"></div><div id="timer"></div></div>
+  <canvas id="minimap" width="170" height="170"></canvas>
+  <div id="speed"><div id="speed-val">0</div><div id="speed-unit">KM/H</div></div>
+  <div id="hint"></div>
+  <div id="toast"></div>
+</div>
+
+<div id="menu">
+  <div id="menu-card">
+    <h1 id="menu-title">CORAL BAY</h1>
+    <p id="menu-sub">AN OPEN-WORLD CRIME GAME</p>
+    <div id="menu-body"></div>
+    <button class="btn" id="menu-btn">Start the story</button>
+    <button class="btn ghost" id="menu-btn2" style="display:none">New game</button>
   </div>
 </div>
 
-<div id="menu-missions" class="menu hidden">
-  <div class="menu-card">
-    <h2 style="color:#ffd76a;letter-spacing:2px;">STORY — RAE DELGADO</h2>
-    <p style="font-size:14px;line-height:1.6;">Rae came back to Coral Bay broke. The Vulture Crew owns the docks, the streets and the cops they bought.
-    Eight jobs stand between Rae and the top of the city.</p>
-    <div id="mission-list"></div>
-    <button class="menu-btn" id="btn-missions-close">CLOSE</button>
-  </div>
-</div>
-
-<div id="menu-pause" class="menu hidden">
-  <div class="menu-card">
-    <h2 style="color:#ffd76a;letter-spacing:2px;">PAUSED</h2>
-    <button class="menu-btn" id="btn-resume">RESUME</button>
-    <button class="menu-btn ghost" id="btn-save">SAVE GAME</button>
-    <button class="menu-btn ghost" id="btn-quit-title">QUIT TO TITLE</button>
-    <div class="menu-note" id="save-note"></div>
-  </div>
-</div>
-
-<div id="menu-dead" class="menu hidden">
-  <div class="menu-card">
-    <h2 style="color:#ff6a5e;letter-spacing:2px;font-size:40px;">WASTED</h2>
-    <p style="font-size:15px;">Rae Delgado got caught out in Coral Bay. The city keeps moving.</p>
-    <button class="menu-btn" id="btn-retry">TRY AGAIN</button>
-    <button class="menu-btn ghost" id="btn-dead-title">QUIT TO TITLE</button>
-  </div>
-</div>
-
-<div id="menu-win" class="menu hidden">
-  <div class="menu-card">
-    <h2 style="color:#ffd76a;letter-spacing:2px;font-size:38px;">KING OF CORAL BAY</h2>
-    <p style="font-size:15px;line-height:1.6;">The Vulture Crew is finished. The docks, the streets, the whole bay — yours.<br>Rae Delgado runs Coral Bay now.</p>
-    <p style="font-size:14px;color:#9fe8ff;" id="win-stats"></p>
-    <button class="menu-btn" id="btn-freeroam">KEEP PLAYING — FREE ROAM</button>
-    <button class="menu-btn ghost" id="btn-win-title">QUIT TO TITLE</button>
-  </div>
-</div>
-
-<div id="shop-panel" class="hidden">
-  <h2>TAC SHOP — WEAPONS &amp; GEAR</h2>
-  <div style="font-size:13px;color:#9fb6c8;">Walk away to close. Cash: <span id="shop-cash" style="color:#7dff9b;font-weight:800;"></span></div>
-  <div class="shop-row"><span>Pistol ammo ×24 — $120</span><button data-buy="pistolAmmo">BUY</button></div>
-  <div class="shop-row"><span>SMG ammo ×60 — $200</span><button data-buy="smgAmmo">BUY</button></div>
-  <div class="shop-row"><span>Shotgun shells ×16 — $180</span><button data-buy="shotAmmo">BUY</button></div>
-  <div class="shop-row"><span>Shotgun (weapon) — $900</span><button data-buy="shotgun">BUY</button></div>
-  <div class="shop-row"><span>Body armor (full) — $350</span><button data-buy="armor">BUY</button></div>
-  <div class="shop-row"><span>Health kit (full) — $150</span><button data-buy="health">BUY</button></div>
-</div>
-
-<div id="garage-panel" class="hidden">
-  <h2>GARAGE — TUNE YOUR RIDE</h2>
-  <div style="font-size:13px;color:#9fb6c8;">Drive a car in to tune it. Cash: <span id="garage-cash" style="color:#7dff9b;font-weight:800;"></span></div>
-  <div class="shop-row"><span>Respray — fresh paint — $200</span><button data-buy="paint">BUY</button></div>
-  <div class="shop-row"><span>Engine tune +25% top speed — $800</span><button data-buy="engine">BUY</button></div>
-  <div class="shop-row"><span>Turbo boost — $650</span><button data-buy="turbo">BUY</button></div>
-  <div class="shop-row"><span>Reinforced armor — $500</span><button data-buy="carArmor">BUY</button></div>
-  <div class="shop-row"><span>Full repair — $150</span><button data-buy="repair">BUY</button></div>
-</div>
-
-<script src="vendor/three.min.js"></script>
-<script src="src/config.js"></script>
-<script src="src/audio.js"></script>
-<script src="src/world.js"></script>
-<script src="src/vehicles.js"></script>
-<script src="src/player.js"></script>
-<script src="src/missions.js"></script>
-<script src="src/hud.js"></script>
-<script src="src/main.js"></script>
+<script src="./vendor/three.min.js"></script>
+<script src="./src/config.js"></script>
+<script src="./src/audio.js"></script>
+<script src="./src/world.js"></script>
+<script src="./src/vehicles.js"></script>
+<script src="./src/traffic.js"></script>
+<script src="./src/player.js"></script>
+<script src="./src/police.js"></script>
+<script src="./src/missions.js"></script>
+<script src="./src/hud.js"></script>
+<script src="./src/main.js"></script>
 </body>
 </html>
