@@ -1,54 +1,71 @@
-# CORAL BAY — Open-World Crime
+# Coral Bay — an open-world crime game
 
-[![make.fun](https://make.fun/badge/gta6-01.svg)](https://make.fun/bounty/gta6-01)
-[![rank](https://make.fun/badge/gta6-01/xeraaGH/gta6-01/rank.svg)](https://make.fun/bounty/gta6-01/leaderboard)
-[![reward](https://make.fun/badge/gta6-01/xeraaGH/gta6-01/reward.svg)](https://make.fun/bounty/gta6-01/leaderboard)
+[![Make GTA 6](https://make.fun/badge/gta6-01.svg)](https://make.fun/bounty/gta6-01)
+[![Rank](https://make.fun/badge/gta6-01/xeraaGH/gta6-01/rank.svg)](https://make.fun/bounty/gta6-01)
+[![Reward](https://make.fun/badge/gta6-01/xeraaGH/gta6-01/reward.svg)](https://make.fun/bounty/gta6-01)
 
-An original open-world crime game that plays offline in a desktop browser
-from static files. You are Rae Delgado, back in Coral Bay broke — and the
-Vulture Crew owns the docks, the streets and the cops they bought. Eight
-story jobs stand between Rae and the top of the city.
+**Coral Bay** is an open-world crime game in the spirit of GTA 6, built for make.fun's
+["Make GTA 6" bounty](https://make.fun/bounty/gta6-01) ($1,666 total prize, top 100 paid).
+Everything in it is original: the city, the characters, the vehicles, the story, the
+art and the sounds. Nothing from Rockstar Games or any other commercial game.
 
 ## The game
 
-- **A complete open world.** A sun-soaked grid city with towers, palms, a
-  beach and the bay — explored on foot and by car, with traffic following the
-  streets, pedestrians on the sidewalks, and cars you can steal (walk up and
-  press E).
-- **Wanted system and police who respond.** Crime raises 1–5 stars. The
-  Coral Bay PD sends cruisers that chase and ram, roadblocks at 3 stars, and
-  the Air One helicopter with its searchlight at 4. Lay low to cool off, or
-  reach the safehouse to clear the heat.
-- **Eight story missions.** Steal your first wheels, run a timed delivery,
-  lose a 2-star tail, take down Vulture runners in a shootout, steal the
-  Falcon S supercar from a guarded marina, survive a 4-star getaway, and end
-  the crew at the container yard — then claim the bay overlook.
-- **Combat and weapons.** Fists, pistol, SMG and a buyable shotgun, with a
-  hold-Q weapon wheel, hitscan tracers, muzzle flash and enemy gunmen who
-  advance, strafe and shoot back.
-- **Progression that rewards play.** Mission payouts, street pickups
-  (cash, health, armor, ammo), respect ranks from Rookie to King of Coral
-  Bay, a TAC SHOP for guns and gear, and a garage for paint, engine tunes,
-  turbo and armor.
-- **Feel and polish.** Third-person camera with mouse orbit and zoom, arcade
-  driving with handbrake, a HUD with a live circular minimap, health/armor
-  bars, wanted stars and speedometer, three synthesized radio stations
-  (WebAudio, no audio files), engine hum and sirens, start/pause/mission
-  menus, game-over and story-complete screens, and localStorage saves.
+You are **Rook**, a wheelman fresh off the ferry in **Coral Bay**, a sun-soaked modern
+coastal city. **Mara Voss** runs the town's jobs from the Coral Diner. Prove yourself
+across **8 story missions**, get paid, and stay out of the Coral Bay PD's way.
+
+- **A living city** — driveable streets, traffic that follows the roads, pedestrians
+  on the sidewalks, a beach, a boardwalk, a pier and a lighthouse.
+- **Cars to steal and drive** — any parked or traffic car is yours if you can reach it
+  (press E). Stealing one puts a star on you.
+- **A wanted system** — 1 to 5 stars. The Coral Bay PD sends cruisers and foot officers
+  who chase and ram you; stay clean and the heat fades, or lose them in the streets.
+- **8 story missions** — from a first hello at the diner to a four-star finale at the
+  lighthouse, with cash rewards up to $3,000. Total purse: $6,800.
+- **A HUD with a minimap** — health, money, wanted stars, speed, objectives, a timer,
+  and a live top-down map with the mission marker and police blips.
+- **Save** — progress (money and mission) is kept in localStorage; continue where you
+  left off.
+
+## Controls
+
+| Key | Action |
+| --- | --- |
+| WASD / arrows | Move / drive |
+| Mouse drag | Orbit camera (wheel zooms) |
+| Shift | Sprint |
+| Space | Jump |
+| E | Enter / exit car, pick up a package |
+| F or click | Punch |
+| Esc | Pause |
+| M | Mute |
 
 ## How to play
 
-Serve `game/` with any static server and open `index.html` in desktop
-Chrome — no network, no build step:
+Serve the `game/` folder with any static HTTP server and open `game/index.html`
+in desktop Chrome. No build step, no network requests — every file is local,
+including the vendored three.js build under `game/vendor/`.
 
-```sh
-node serve.ts   # then open http://localhost:8080
+```
+python3 -m http.server --directory game 8000
+# open http://localhost:8000/
 ```
 
-WASD move/drive · Shift sprint · Space jump/handbrake · E steal/enter car ·
-Click/F shoot · 1–4 or hold Q weapons · R radio · M story · H horn ·
-P pause · C camera.
+## How it is built
 
-Everything in Coral Bay is original: the city, characters, vehicles, names,
-story, art and music. No Rockstar, GTA or other commercial game content.
-Three.js (r152) is vendored under `game/vendor/three.min.js`.
+- **three.js r186** (vendored as `game/vendor/three.min.js`) renders the city.
+- Vanilla JavaScript, split into files with one clear job each:
+  `config.js` (tuning + missions), `world.js` (the city), `vehicles.js` (cars),
+  `traffic.js` (pedestrians + traffic), `player.js` (on-foot play + camera),
+  `police.js` (wanted level + chases), `missions.js` (the story),
+  `hud.js` (HUD + minimap + menus), `audio.js` (WebAudio synth sounds),
+  `main.js` (boot + game loop).
+- `main.ts` (Node 22, stdlib only) hands the game in: it copies `game/` and
+  `screenshots/` to the output directory and writes `dossier.json` with the
+  kit's `buildDossier`.
+
+## License
+
+MIT — see [LICENSE](LICENSE). Built by an AI agent for make.fun's
+"Make GTA 6" bounty.
